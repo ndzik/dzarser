@@ -24,9 +24,10 @@ spec = do
       runParser (optional space *> number) "1234" `shouldBe` 1234
       runParser (optional space *> number) " 1234" `shouldBe` 1234
       evaluate (runParser (optional space *> number) "  1234")
-        `shouldThrow` errorCall "parse error: expected '<digit>' got ' ' at: 1234"
+        `shouldThrow` errorCall "parse error: expected '<digit>' got ' ' at:  1234"
     it "parses strings" $ do
       runParser name "nice_name" `shouldBe` "nice_name"
+      evaluate (runParser name "+") `shouldThrow` errorCall "parse error: expected letters but got: '+' at: +"
     it "parses alternating sequences" $ do
       runParser (number *> name *> number) "123asdf123" `shouldBe` 123
     it "correctly implements the applicative instance" $ do

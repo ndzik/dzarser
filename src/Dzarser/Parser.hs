@@ -72,6 +72,11 @@ item = Parser $ \case
   []       -> []
   (c : rs) -> [ParserResult (c, rs)]
 
+peek :: Parser (Maybe Char)
+peek = Parser $ \case
+  [] -> [ParserResult (Nothing, [])]
+  (c : rs) -> [ParserResult (Just c, c:rs)]
+
 instance Alternative Parser where
   empty = Parser $ const [ParserError "no result"]
   p <|> q = Parser $ \s -> case parse p s of
@@ -85,7 +90,7 @@ instance MonadPlus Parser where
   mplus = (<|>)
 
 parserFail :: String -> Parser a
-parserFail reason = Parser $ \s -> [ParserError $ printf "%s at: %s" reason s]
+parserFail reason = Parser $ \s -> [ParserError $ printf "%s at: '%s'" reason s]
 
 -- number parses a consecutive amount of digits and returns them as an
 -- `Integer`
@@ -111,7 +116,9 @@ spaces = many space
 -- satisfy uses the input predicate and returns the expected token when
 -- encountered.
 satisfy :: (Char -> Bool) -> (Char -> String) -> Parser Char
-satisfy p mkErr = item >>= \c -> if p c then return c else parserFail $ mkErr c
+satisfy p mkErr = peek >>= \case
+  Nothing -> parserFail "EOF"
+  Just c -> if p c then item else parserFail $ mkErr c
 
 expect :: Char -> Parser Char
 expect c = satisfy (c ==) $ \r -> printf "expected '%c' got '%c'" c r
@@ -124,5 +131,5 @@ optional = A.optional
 --  v                 -> v
 
 name :: Parser String
-name = many (satisfy pred $ \r -> printf "expected letters but got: '%c'" r)
+name = some (satisfy pred $ \r -> printf "expected letters but got: '%c'" r)
   where pred c = isLetter c || c == '_'
