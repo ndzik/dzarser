@@ -15,6 +15,7 @@ import           Text.Read                      ( readMaybe )
 -- ParserResult describes the result of a `Parser`, which can either be a
 -- successful parse, or a a `ParseError`.
 data ParserResult a = ParserResult (a, String) |  ParserError String deriving (Show, Eq)
+type ParseError = String
 
 -- A `Parser` is a function from `String`s to things `a` and `String`s.
 newtype Parser a = Parser { parse :: String -> [ParserResult a] }
@@ -30,11 +31,11 @@ instance Applicative ParserResult where
   (ParserResult (f, _)) <*> ra = f <$> ra
 
 -- runParser runs the given parser on the given input and returns the result.
-runParser :: Show a => Parser a -> String -> a
+runParser :: Show a => Parser a -> String -> Either ParseError a
 runParser p s = case parse p s of
-  [ParserResult (a, _)] -> a
-  [ParserError  e     ] -> error $ "parse error: " ++ e
-  v -> error $ "parse error: unknown with remainder: " ++ show v
+  [ParserResult (a, _)] -> Right a
+  [ParserError  e     ] -> Left $ "parse error: " ++ e
+  v -> Left $ "parse error: unknown with remainder: " ++ show v
 
 debugParser :: Show a => Parser a -> String -> [ParserResult a]
 debugParser = parse
