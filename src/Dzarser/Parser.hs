@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 
 module Dzarser.Parser where
@@ -13,119 +14,17 @@ import Control.Monad.Trans
 import Data.Bifunctor (first)
 import Data.Functor.Identity
 import Data.Traversable (sequence)
+import Dzarser.Base
 
--- ParserResult describes the result of a `Parser`, which can either be a
--- successful parse, or a a `ParseError`.
-data ParserResult a = ParserResult (a, String) | ParserError String deriving (Show, Eq)
+type Parser a = ParserT (Identity ()) Identity a
 
-data ParserState = ParserState
-  { _line :: Int,
-    _col :: Int
-  }
-  deriving (Show, Eq)
-
-defaultParserState :: ParserState
-defaultParserState = ParserState 1 1
-
-incCol :: ParserState -> ParserState
-incCol s = s {_col = _col s + 1}
-
-incLine :: ParserState -> ParserState
-incLine s = s {_line = _line s + 1}
-
-type ParseError = String
-
--- A `Parser` is a function from `String`s to things `a` and `String`s.
-newtype ParserT m a = ParserT {parse :: String -> StateT ParserState m [ParserResult a]}
-
-type Parser a = ParserT Identity a
-
-instance MonadTrans ParserT where
-  lift eff = ParserT $ \s -> do
-    a <- lift eff
-    return [ParserResult (a, "")]
-
-instance Functor ParserResult where
-  fmap _ (ParserError e) = ParserError e
-  fmap f (ParserResult r) = ParserResult $ first f r
-
-instance Applicative ParserResult where
-  pure a = ParserResult (a, "")
-  (ParserError e) <*> _ = ParserError e
-  _ <*> (ParserError e) = ParserError e
-  (ParserResult (f, _)) <*> ra = f <$> ra
-
--- runParserT runs the given parser on the given input and returns the result.
-runParserT :: (Show a, Monad m) => ParserT m a -> String -> m (Either ParseError a)
-runParserT p s =
-  evalStateT (parse p s) defaultParserState >>= \case
-    [ParserResult (a, _)] -> return . Right $ a
-    [ParserError e] -> return . Left $ "parse error: " ++ e
-    v -> return . Left $ "parse error: unknown with remainder: " ++ show v
-
-debugParserT :: (Show a, Monad m) => ParserT m a -> String -> m [ParserResult a]
-debugParserT p s = evalStateT (parse p s) defaultParserState
+instance ParserTracker (Identity ()) where
+  incCol _ = return ()
+  incLine _ = return ()
+  curPos _ = (0, 0)
 
 runParser :: Show a => Parser a -> String -> Either ParseError a
-runParser p = runIdentity . runParserT p
+runParser p = fst . runIdentity . runParserT p (Identity ())
 
 debugParser :: Show a => Parser a -> String -> [ParserResult a]
-debugParser p s = runIdentity . evalStateT (parse p s) $ defaultParserState
-
-trackParser :: Show a => Parser a -> String -> ([ParserResult a], ParserState)
-trackParser p s = runIdentity . runStateT (parse p s) $ defaultParserState
-
--- runIdentity . runStateT (parse p s) $ defaultParserState
-
-instance (Functor m) => Functor (ParserT m) where
-  -- Parse with `Parser` p and map `f` over the results. Remember that a parse
-  -- operation might have multiple outcomes, which means we have to map over
-  -- every possible outcome.
-  fmap f p = ParserT $ fmap (map (f <$>)) <$> parse p
-
-instance (Monad m) => Applicative (ParserT m) where
-  pure v = ParserT $ \s -> return [ParserResult (v, s)]
-  (ParserT p) <*> (ParserT q) =
-    ParserT
-      ( p
-          >=> ( fmap join
-                  . mapM
-                    ( \case
-                        rf@(ParserResult (_, s)) -> fmap (map (rf <*>)) . q $ s
-                        ParserError err -> return [ParserError err]
-                    )
-              )
-      )
-
---  Alternative using list comprehension and BEFORE `Parser` became a
---  MonadTransformer:
---  p <*> q = Parser $ \s ->
---    [ rf <*> ra | rf@(ParserResult (_, s')) <- parse p s, ra <- parse q s' ]
-
-instance (Monad m) => Monad (ParserT m) where
-  -- Binding a `Parser` to another `Parser` composes the second parse operation
-  -- over the result of the first parse operation, yielding a new `Parser`.
-  -- Alternative before `Parser` became a MonadTransformer:
-  -- Parser $ \s -> [ res | (a, s') <- p s, res <- parse (f a) s' ]
-  (ParserT p) >>= f =
-    ParserT $
-      p
-        >=> fmap join
-          . mapM
-            ( \case
-                ParserResult (a, s) -> parse (f a) s
-                ParserError err -> return [ParserError err]
-            )
-
-instance Monad m => Alternative (ParserT m) where
-  empty = ParserT $ return . const [ParserError "no result"]
-  p <|> q = ParserT $ \s ->
-    parse p s >>= \case
-      [] -> parse q s
-      [ParserError _] -> parse q s
-      res -> return res
-
--- Necessary for mtl usage.
-instance Monad m => MonadPlus (ParserT m) where
-  mzero = empty
-  mplus = (<|>)
+debugParser p s = runIdentity . evalStateT (parse p s) $ Identity ()

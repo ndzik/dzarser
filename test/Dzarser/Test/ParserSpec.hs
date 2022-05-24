@@ -2,6 +2,7 @@ module Dzarser.Test.ParserSpec where
 
 import Control.Exception
 import Control.Monad
+import Dzarser.Base
 import Dzarser.Combinator
 import Dzarser.Parser
 import Test.Hspec
@@ -26,14 +27,12 @@ spec = do
       runParser (optional space *> number) "1234" `shouldBe` Right 1234
       runParser (optional space *> number) " 1234" `shouldBe` Right 1234
       runParser (optional space *> number) "  1234"
-        `shouldBe` Left "parse error: expected '<digit>' got ' ' at: ' 1234'"
+        `shouldBe` Left (show (ParserError "expected '<digit>' got ' ' at: ' 1234'" 0 0 :: ParserResult ()))
     it "parses strings" $ do
       runParser name "nice_name" `shouldBe` Right "nice_name"
-      runParser name "+" `shouldBe` Left "parse error: expected letters but got: '+' at: '+'"
+      runParser name "+" `shouldBe` Left (show (ParserError "expected letters but got: '+' at: '+'" 0 0 :: ParserResult ()))
     it "parses alternating sequences" $ do
       runParser (number *> name *> number) "123asdf123" `shouldBe` Right 123
     it "correctly implements the applicative instance" $ do
       runParser (TestNumber <$> number <*> name <*> number) "123asdf123"
         `shouldBe` Right (TestNumber 123 "asdf" 123)
-    it "tracks position in stream" $ do
-      snd (trackParser (optional space *> number *> optional space *> number) "1234\n42069") `shouldBe` ParserState 2 10
