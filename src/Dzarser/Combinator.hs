@@ -7,6 +7,7 @@ import Control.Applicative as A
     Applicative (..),
     optional,
   )
+import Control.Monad.State
 import Data.Char
 import Dzarser.Parser
 import Text.Printf
@@ -14,11 +15,14 @@ import Text.Read (readMaybe)
 
 -- -- With this foundation set, we can start defining some useful combinators.
 
--- item parses a single char from the stream.
 item :: Monad m => ParserT m Char
 item = ParserT $ \case
   [] -> return []
-  (c : rs) -> return [ParserResult (c, rs)]
+  (c : rs) -> trackPos c >> return [ParserResult (c, rs)]
+  where
+    trackPos :: Monad m => Char -> StateT ParserState m ()
+    trackPos '\n' = modify incLine
+    trackPos c = modify incCol
 
 peek :: Monad m => ParserT m (Maybe Char)
 peek = ParserT $ \case

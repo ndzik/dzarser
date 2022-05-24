@@ -2,8 +2,8 @@ module Dzarser.Test.ParserSpec where
 
 import Control.Exception
 import Control.Monad
-import Dzarser.Parser
 import Dzarser.Combinator
+import Dzarser.Parser
 import Test.Hspec
   ( Spec,
     describe,
@@ -35,3 +35,5 @@ spec = do
     it "correctly implements the applicative instance" $ do
       runParser (TestNumber <$> number <*> name <*> number) "123asdf123"
         `shouldBe` Right (TestNumber 123 "asdf" 123)
+    it "tracks position in stream" $ do
+      snd (trackParser (optional space *> number *> optional space *> number) "1234\n42069") `shouldBe` ParserState 2 10

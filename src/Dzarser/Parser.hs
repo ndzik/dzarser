@@ -8,6 +8,7 @@ import Control.Applicative as A
     optional,
   )
 import Control.Monad
+import Control.Monad.State
 import Control.Monad.Trans
 import Data.Bifunctor (first)
 import Data.Functor.Identity
@@ -17,16 +18,31 @@ import Data.Traversable (sequence)
 -- successful parse, or a a `ParseError`.
 data ParserResult a = ParserResult (a, String) | ParserError String deriving (Show, Eq)
 
+data ParserState = ParserState
+  { _line :: Int,
+    _col :: Int
+  }
+  deriving (Show, Eq)
+
+defaultParserState :: ParserState
+defaultParserState = ParserState 1 1
+
+incCol :: ParserState -> ParserState
+incCol s = s {_col = _col s + 1}
+
+incLine :: ParserState -> ParserState
+incLine s = s {_line = _line s + 1}
+
 type ParseError = String
 
 -- A `Parser` is a function from `String`s to things `a` and `String`s.
-newtype ParserT m a = ParserT {parse :: String -> m [ParserResult a]}
+newtype ParserT m a = ParserT {parse :: String -> StateT ParserState m [ParserResult a]}
 
 type Parser a = ParserT Identity a
 
 instance MonadTrans ParserT where
   lift eff = ParserT $ \s -> do
-    a <- eff
+    a <- lift eff
     return [ParserResult (a, "")]
 
 instance Functor ParserResult where
@@ -42,19 +58,24 @@ instance Applicative ParserResult where
 -- runParserT runs the given parser on the given input and returns the result.
 runParserT :: (Show a, Monad m) => ParserT m a -> String -> m (Either ParseError a)
 runParserT p s =
-  parse p s >>= \case
+  evalStateT (parse p s) defaultParserState >>= \case
     [ParserResult (a, _)] -> return . Right $ a
     [ParserError e] -> return . Left $ "parse error: " ++ e
     v -> return . Left $ "parse error: unknown with remainder: " ++ show v
 
 debugParserT :: (Show a, Monad m) => ParserT m a -> String -> m [ParserResult a]
-debugParserT = parse
+debugParserT p s = evalStateT (parse p s) defaultParserState
 
 runParser :: Show a => Parser a -> String -> Either ParseError a
 runParser p = runIdentity . runParserT p
 
 debugParser :: Show a => Parser a -> String -> [ParserResult a]
-debugParser p = runIdentity . parse p
+debugParser p s = runIdentity . evalStateT (parse p s) $ defaultParserState
+
+trackParser :: Show a => Parser a -> String -> ([ParserResult a], ParserState)
+trackParser p s = runIdentity . runStateT (parse p s) $ defaultParserState
+
+-- runIdentity . runStateT (parse p s) $ defaultParserState
 
 instance (Functor m) => Functor (ParserT m) where
   -- Parse with `Parser` p and map `f` over the results. Remember that a parse
