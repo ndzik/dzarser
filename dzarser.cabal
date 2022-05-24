@@ -22,8 +22,9 @@ maintainer:         norbert@perun.network
 extra-source-files: CHANGELOG.md
 
 library
-    exposed-modules:  Dzarser.Parser
-                    , Dzarser.StatefulParser
+    exposed-modules:  Dzarser
+                    , Dzarser.Parser
+                    , Dzarser.Combinator
 
     -- Modules included in this library but not exported.
     -- other-modules:

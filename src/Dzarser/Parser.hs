@@ -1,136 +1,131 @@
 {-# LANGUAGE LambdaCase #-}
+
 module Dzarser.Parser where
 
-import           Control.Applicative           as A
-                                                ( Alternative(..)
-                                                , Applicative(..)
-                                                , optional
-                                                )
-import           Control.Monad
-import           Data.Bifunctor                 ( first )
-import           Data.Char
-import           Text.Printf
-import           Text.Read                      ( readMaybe )
+import Control.Applicative as A
+  ( Alternative (..),
+    Applicative (..),
+    optional,
+  )
+import Control.Monad
+import Control.Monad.State
+import Control.Monad.Trans
+import Data.Bifunctor (first)
+import Data.Functor.Identity
+import Data.Traversable (sequence)
 
 -- ParserResult describes the result of a `Parser`, which can either be a
 -- successful parse, or a a `ParseError`.
-data ParserResult a = ParserResult (a, String) |  ParserError String deriving (Show, Eq)
+data ParserResult a = ParserResult (a, String) | ParserError String deriving (Show, Eq)
+
+data ParserState = ParserState
+  { _line :: Int,
+    _col :: Int
+  }
+  deriving (Show, Eq)
+
+defaultParserState :: ParserState
+defaultParserState = ParserState 1 1
+
+incCol :: ParserState -> ParserState
+incCol s = s {_col = _col s + 1}
+
+incLine :: ParserState -> ParserState
+incLine s = s {_line = _line s + 1}
+
 type ParseError = String
 
 -- A `Parser` is a function from `String`s to things `a` and `String`s.
-newtype Parser a = Parser { parse :: String -> [ParserResult a] }
+newtype ParserT m a = ParserT {parse :: String -> StateT ParserState m [ParserResult a]}
+
+type Parser a = ParserT Identity a
+
+instance MonadTrans ParserT where
+  lift eff = ParserT $ \s -> do
+    a <- lift eff
+    return [ParserResult (a, "")]
 
 instance Functor ParserResult where
-  fmap _ (ParserError  e) = ParserError e
+  fmap _ (ParserError e) = ParserError e
   fmap f (ParserResult r) = ParserResult $ first f r
 
 instance Applicative ParserResult where
   pure a = ParserResult (a, "")
-  (ParserError e) <*> _               = ParserError e
-  _               <*> (ParserError e) = ParserError e
+  (ParserError e) <*> _ = ParserError e
+  _ <*> (ParserError e) = ParserError e
   (ParserResult (f, _)) <*> ra = f <$> ra
 
--- runParser runs the given parser on the given input and returns the result.
+-- runParserT runs the given parser on the given input and returns the result.
+runParserT :: (Show a, Monad m) => ParserT m a -> String -> m (Either ParseError a)
+runParserT p s =
+  evalStateT (parse p s) defaultParserState >>= \case
+    [ParserResult (a, _)] -> return . Right $ a
+    [ParserError e] -> return . Left $ "parse error: " ++ e
+    v -> return . Left $ "parse error: unknown with remainder: " ++ show v
+
+debugParserT :: (Show a, Monad m) => ParserT m a -> String -> m [ParserResult a]
+debugParserT p s = evalStateT (parse p s) defaultParserState
+
 runParser :: Show a => Parser a -> String -> Either ParseError a
-runParser p s = case parse p s of
-  [ParserResult (a, _)] -> Right a
-  [ParserError  e     ] -> Left $ "parse error: " ++ e
-  v -> Left $ "parse error: unknown with remainder: " ++ show v
+runParser p = runIdentity . runParserT p
 
 debugParser :: Show a => Parser a -> String -> [ParserResult a]
-debugParser = parse
+debugParser p s = runIdentity . evalStateT (parse p s) $ defaultParserState
 
-instance Functor Parser where
+trackParser :: Show a => Parser a -> String -> ([ParserResult a], ParserState)
+trackParser p s = runIdentity . runStateT (parse p s) $ defaultParserState
+
+-- runIdentity . runStateT (parse p s) $ defaultParserState
+
+instance (Functor m) => Functor (ParserT m) where
   -- Parse with `Parser` p and map `f` over the results. Remember that a parse
   -- operation might have multiple outcomes, which means we have to map over
   -- every possible outcome.
-  fmap f p = Parser $ \s -> map (f <$>) $ parse p s
+  fmap f p = ParserT $ fmap (map (f <$>)) <$> parse p
 
-instance Applicative Parser where
-  pure v = Parser $ \s -> [ParserResult (v, s)]
-  (Parser p) <*> (Parser q) = Parser
-    (p >=> \case
-      rf@(ParserResult (_, s)) -> map (rf <*>) $ q s
-      ParserError err          -> [ParserError err]
-    )
+instance (Monad m) => Applicative (ParserT m) where
+  pure v = ParserT $ \s -> return [ParserResult (v, s)]
+  (ParserT p) <*> (ParserT q) =
+    ParserT
+      ( p
+          >=> ( fmap join
+                  . mapM
+                    ( \case
+                        rf@(ParserResult (_, s)) -> fmap (map (rf <*>)) . q $ s
+                        ParserError err -> return [ParserError err]
+                    )
+              )
+      )
+
+--  Alternative using list comprehension and BEFORE `Parser` became a
+--  MonadTransformer:
 --  p <*> q = Parser $ \s ->
 --    [ rf <*> ra | rf@(ParserResult (_, s')) <- parse p s, ra <- parse q s' ]
 
-instance Monad Parser where
+instance (Monad m) => Monad (ParserT m) where
   -- Binding a `Parser` to another `Parser` composes the second parse operation
   -- over the result of the first parse operation, yielding a new `Parser`.
-  -- Alternative: Parser $ \s -> [ res | (a, s') <- p s, res <- parse (f a) s' ]
-  (Parser p) >>= f = Parser $ p >=> \case
-    ParserResult (a, s) -> parse (f a) s
-    ParserError  err    -> return (ParserError err)
+  -- Alternative before `Parser` became a MonadTransformer:
+  -- Parser $ \s -> [ res | (a, s') <- p s, res <- parse (f a) s' ]
+  (ParserT p) >>= f =
+    ParserT $
+      p
+        >=> fmap join
+          . mapM
+            ( \case
+                ParserResult (a, s) -> parse (f a) s
+                ParserError err -> return [ParserError err]
+            )
 
-
--- With this foundation set, we can start defining some useful `Parser`s.
-
--- item parses a single char from the stream.
-item :: Parser Char
-item = Parser $ \case
-  []       -> []
-  (c : rs) -> [ParserResult (c, rs)]
-
-peek :: Parser (Maybe Char)
-peek = Parser $ \case
-  [] -> [ParserResult (Nothing, [])]
-  (c : rs) -> [ParserResult (Just c, c:rs)]
-
-instance Alternative Parser where
-  empty = Parser $ const [ParserError "no result"]
-  p <|> q = Parser $ \s -> case parse p s of
-    []              -> parse q s
-    [ParserError _] -> parse q s
-    res             -> res
+instance Monad m => Alternative (ParserT m) where
+  empty = ParserT $ return . const [ParserError "no result"]
+  p <|> q = ParserT $ \s ->
+    parse p s >>= \case
+      [] -> parse q s
+      [ParserError _] -> parse q s
+      res -> return res
 
 -- Necessary for mtl usage.
-instance MonadPlus Parser where
+instance Monad m => MonadPlus (ParserT m) where
   mzero = empty
   mplus = (<|>)
-
-parserFail :: String -> Parser a
-parserFail reason = Parser $ \s -> [ParserError $ printf "%s at: '%s'" reason s]
-
--- number parses a consecutive amount of digits and returns them as an
--- `Integer`
---  >>> Implementing the `Alternative` typeclass for our `Parser` allows us to
---  use `many`, `some` and `<|>`, which is perfect for this use case.
-number :: Parser Integer
-number = do
-  some (satisfy isDigit $ \r -> printf "expected '<digit>' got '%c'" r)
-    >>= \s ->
-          (\case
-              Nothing -> parserFail $ printf "expected digits got: '%c'" s
-              Just a  -> pure a
-            )
-            (readMaybe s :: Maybe Integer)
-
-space :: Parser Char
-space = satisfy isSpace $ \r -> printf "expected '%s' got '%c'" "<space>" r
-
--- spaces skips all upcoming spaces.
-spaces :: Parser String
-spaces = many space
-
--- satisfy uses the input predicate and returns the expected token when
--- encountered.
-satisfy :: (Char -> Bool) -> (Char -> String) -> Parser Char
-satisfy p mkErr = peek >>= \case
-  Nothing -> parserFail "EOF"
-  Just c -> if p c then item else parserFail $ mkErr c
-
-expect :: Char -> Parser Char
-expect c = satisfy (c ==) $ \r -> printf "expected '%c' got '%c'" c r
-
-optional :: Parser a -> Parser (Maybe a)
-optional = A.optional
---optional :: Parser a -> Parser a
---optional p = Parser $ \s -> case parse p s of
---  [ParserError err] -> [ParserNoop s]
---  v                 -> v
-
-name :: Parser String
-name = some (satisfy pred $ \r -> printf "expected letters but got: '%c'" r)
-  where pred c = isLetter c || c == '_'
