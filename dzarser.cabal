@@ -23,7 +23,9 @@ extra-source-files: CHANGELOG.md
 
 library
     exposed-modules:  Dzarser
+                    , Dzarser.Base
                     , Dzarser.Parser
+                    , Dzarser.Stateful.Parser
                     , Dzarser.Combinator
 
     -- Modules included in this library but not exported.
@@ -46,6 +48,7 @@ test-suite dzarser-test
     hs-source-dirs:   test
     main-is:          Spec.hs
     other-modules:    Dzarser.Test.ParserSpec
+                    , Dzarser.Test.StatefulParserSpec
     build-depends:    base >=4.14.0.0
                     , hspec
                     , hspec-expectations
