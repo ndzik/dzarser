@@ -3,6 +3,7 @@ module Dzarser.Test.ParserSpec where
 import Control.Exception
 import Control.Monad
 import Dzarser.Parser
+import Dzarser.Combinator
 import Test.Hspec
   ( Spec,
     describe,
