@@ -25,3 +25,7 @@ runParser p = runIdentity . runParserT p defaultParserState
 
 evalParser :: Show a => Parser a -> String -> Either ParseError a
 evalParser p = fst . runIdentity . runParserT p defaultParserState
+
+evalParser' :: Show a => Parser a -> ParserState -> String -> Either ParseError a
+evalParser' p s = fst . runIdentity . runParserT p s
+
