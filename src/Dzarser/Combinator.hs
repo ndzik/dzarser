@@ -9,9 +9,9 @@ import Control.Applicative as A
   )
 import Control.Monad.State
 import Data.Char
+import Data.Functor ((<&>))
 import Dzarser.Base
 import Text.Printf
-import Data.Functor ((<&>))
 import Text.Read (readMaybe)
 
 -- -- With this foundation set, we can start defining some useful combinators.
@@ -33,7 +33,7 @@ peek = ParserT $ \case
 parserFail :: (Monad m, ParserTracker s) => String -> ParserT s m a
 parserFail reason = ParserT $ \s -> do
   (c, l) <- gets curPos
-  return [ParserError (printf "%s at: '%s'" reason s) c l]
+  return [ParserError (printf "%s at: '%s'" reason $ takeWhile (/= '\n') s) c l]
 
 -- number parses a consecutive amount of digits and returns them as an
 -- `Integer`
@@ -70,8 +70,16 @@ expect c = satisfy (c ==) $ \r -> printf "expected '%c' got '%c'" c r
 optional :: Monad m => ParserT s m a -> ParserT s m (Maybe a)
 optional = A.optional
 
+nothing :: (Monad m, ParserTracker s) => ParserT s m ()
+nothing =
+  peek >>= \case
+    Nothing -> return ()
+    Just c
+      | isSpace c -> item >> nothing
+      | otherwise -> parserFail $ printf "expected no content but got '%c'" c
+
 name :: (Monad m, ParserTracker s) => ParserT s m String
-name = some (satisfy pred $ \r -> printf "expected letters but got: '%c'" r)
+name = some (satisfy pred $ \r -> printf "expected name but got: '%c'" r)
   where
     pred c = isLetter c || c == '_'
 

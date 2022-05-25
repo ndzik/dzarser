@@ -30,7 +30,7 @@ spec = do
         `shouldBe` Left (show (ParserError "expected '<digit>' got ' ' at: ' 1234'" 0 0 :: ParserResult ()))
     it "parses strings" $ do
       runParser name "nice_name" `shouldBe` Right "nice_name"
-      runParser name "+" `shouldBe` Left (show (ParserError "expected letters but got: '+' at: '+'" 0 0 :: ParserResult ()))
+      runParser name "+" `shouldBe` Left (show (ParserError "expected name but got: '+' at: '+'" 0 0 :: ParserResult ()))
     it "parses alternating sequences" $ do
       runParser (number *> name *> number) "123asdf123" `shouldBe` Right 123
     it "correctly implements the applicative instance" $ do
