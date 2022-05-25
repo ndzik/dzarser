@@ -15,9 +15,9 @@ spec :: Spec
 spec = do
   describe "StatefulParser" $ do
     it "tracks position" $ do
-      snd (runParser (optional space *> number *> optional space *> number) "1234\n42069") `shouldBe` ParserState 2 10
+      snd (runParser (optional space *> number *> optional space *> number) "1234\n42069") `shouldBe` ParserState 2 6
     it "backtracks position for optionals" $ do
-      snd (runParser (optional space *> (name' <|> number) *> optional space *> number) "1234\n42069") `shouldBe` ParserState 2 10
+      snd (runParser (optional space *> (name' <|> number) *> optional space *> number) "1234\n42069") `shouldBe` ParserState 2 6
 
 name' :: (Monad m, ParserTracker s) => ParserT s m Integer
 name' = item >> item >> name >> parserFail "lol"

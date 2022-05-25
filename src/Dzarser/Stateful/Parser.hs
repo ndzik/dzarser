@@ -15,7 +15,7 @@ defaultParserState = ParserState 1 1
 
 instance ParserTracker ParserState where
   incCol s = s {_col = _col s + 1}
-  incLine s = s {_line = _line s + 1}
+  incLine s = s {_line = _line s + 1, _col = 1}
   curPos (ParserState l c) = (l, c)
 
 type Parser a = ParserT ParserState Identity a
