@@ -11,6 +11,7 @@ import Control.Monad.State
 import Data.Char
 import Dzarser.Base
 import Text.Printf
+import Data.Functor ((<&>))
 import Text.Read (readMaybe)
 
 -- -- With this foundation set, we can start defining some useful combinators.
@@ -73,3 +74,12 @@ name :: (Monad m, ParserTracker s) => ParserT s m String
 name = some (satisfy pred $ \r -> printf "expected letters but got: '%c'" r)
   where
     pred c = isLetter c || c == '_'
+
+parserPos :: (Monad m, ParserTracker s) => ParserT s m (Int, Int)
+parserPos = gets curPos
+
+parserCol :: (Monad m, ParserTracker s) => ParserT s m Int
+parserCol = gets curPos <&> fst
+
+parserLine :: (Monad m, ParserTracker s) => ParserT s m Int
+parserLine = gets curPos <&> snd

@@ -1,4 +1,6 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Dzarser.Base where
 
@@ -48,7 +50,11 @@ class ParserTracker s where
 instance MonadTrans (ParserT s) where
   lift eff = ParserT $ \s -> do
     a <- lift eff
-    return [ParserResult (a, "")]
+    return [ParserResult (a, s)]
+
+instance Monad m => MonadState s (ParserT s m) where
+  get = ParserT $ \s -> get >>= \st -> return [ParserResult (st, s)]
+  put st = ParserT $ \s -> put st >> return [ParserResult ((), s)]
 
 instance Functor ParserResult where
   fmap _ (ParserError e c l) = ParserError e c l
