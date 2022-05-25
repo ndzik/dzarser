@@ -69,11 +69,6 @@ expect c = satisfy (c ==) $ \r -> printf "expected '%c' got '%c'" c r
 optional :: Monad m => ParserT s m a -> ParserT s m (Maybe a)
 optional = A.optional
 
---optional :: Parser a -> Parser a
---optional p = Parser $ \s -> case parse p s of
---  [ParserError err] -> [ParserNoop s]
---  v                 -> v
-
 name :: (Monad m, ParserTracker s) => ParserT s m String
 name = some (satisfy pred $ \r -> printf "expected letters but got: '%c'" r)
   where
