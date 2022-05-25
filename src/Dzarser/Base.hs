@@ -110,9 +110,9 @@ instance Monad m => Alternative (ParserT s m) where
   empty = ParserT $ do
     return . const [ParserError "no result" 0 0]
   p <|> q = ParserT $ \s ->
-    parse p s >>= \case
+    get >>= \st -> parse p s >>= \case
       [] -> parse q s
-      [err@ParserError {}] -> parse q s
+      [err@ParserError {}] -> put st >> parse q s
       res -> return res
 
 -- Necessary for mtl usage.
